@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Запись голоса и распознавание речи</title>
+	<meta charset="UTF-8">
+	<meta property="og:image" content="">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style type="text/css">
+		body {
+			font-family: 'Arial', sans-serif;
+		}
+
+		h2 {
+			color: #847e95;
+			font-weight: 400;
+			font-size: 24px;
+			margin-bottom: 20px;
+			margin-left: 10px;
+		}
+
+button {
+  font-family: 'Arial', sans-serif;
+  font-size: 16px;
+  padding: 10px 20px;
+  margin: 10px;
+  background-color: #7167dc;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #a1acb6;
+}
+
+
+	textarea {
+		font-family: 'Arial', sans-serif;
+		font-size: 16px;
+		padding: 10px;
+		margin: 10px;
+		width: 90%;
+		height: 200px;
+		border: 1px solid #dadce0;
+		border-radius: 8px;
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+		resize: vertical;
+	}
+
+.notes-wrapper {
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  width: 90%;
+  margin-left: 10px;
+  background-color: white;
+}
+
+	[data-type="footer"].s-footer {
+		display: none;
+	}
+	.messenger-button, 
+	.messenger-button_show,
+	.messenger-closed {
+		display: none;
+	}
+	
+	@media screen and (max-width: 768px) {
+	  textarea,
+	  .notes-wrapper {
+	    margin-left: auto;
+	    margin-right: auto;
+		
+	  }
+	}
+
+	.highlight {
+	  background-color: yellow;
+	}
+
+	.flex-container {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin: 10px;
+	}
+
+	.search-container {
+		display: flex;
+		align-items: center;
+	}
+
+	input[type="text"] {
+		font-size: 16px;
+		padding: 10px;
+		border: 1px solid #dadce0;
+		border-radius: 4px;
+		margin-left: 10px;
+		background-color: white;
+		width: 245px;
+	}
+.note-container:not(:first-child) {
+  border-top: 1px solid #dadce0;
+  padding-top: 10px;
+}
+.content-container {
+  display: flex;
+  flex-direction: column;
+  align-items:left;
+}
+
+.note-container, .content-container {
+  max-width: 100%;
+}
+
+.note-image {
+  width: auto;
+  height: auto;
+}
+
+
+body {
+  font-family: 'Arial', sans-serif;
+  background-color: #f2f2f2;
+}
+
+	</style>
+</head>
+<body>
+	<br>
+	<h2>Голосовые заметки by django</h2>
+	<button id="start-record-btn">Начать запись</button>
+	<button id="pause-resume-btn" disabled>Пауза</button>
+	<button id="stop-record-btn" disabled>Остановить запись</button>
+	<button id="captureBtn">Снимок с камеры</button>
+	<input type="file" style="left:10px;position: relative;" id="imageInput" accept="image/*">
+	<br><br>
+	<input type="text" id="search-input" placeholder="Поиск"><br>
+	<button id="search-btn">Найти</button>
+	<button id="reset-btn">Сбросить поиск</button>
+	<br><br>
+	<div class="notes-wrapper">
+		<textarea id="output-textarea" placeholder="Здесь будут отображаться распознанные тексты"></textarea>
+		<div id="notes-container"></div>
+	</div>
+
+<script>
+
+const startRecordBtn = document.getElementById("start-record-btn");
+const stopRecordBtn = document.getElementById("stop-record-btn");
+const outputTextarea = document.getElementById("output-textarea");
+const notesContainer = document.getElementById("notes-container");
+const pauseResumeBtn = document.getElementById("pause-resume-btn");
+let recognizer;
+let recognition;
+let chunks = [];
+
+
+
+// Создаем новый SpeechRecognition-объект
+if ("SpeechRecognition" in window) {
+  recognizer = new window.SpeechRecognition();
+} else if ("webkitSpeechRecognition" in window) {
+  recognizer = new window.webkitSpeechRecognition();
+}
+
+// Настраиваем параметры распознавания речи
+recognizer.continuous = true;
+recognizer.interimResults = false;
+recognizer.lang = "ru-RU";
+
+// Событие при начале распознавания речи
+recognizer.onstart = () => {
+  startRecordBtn.disabled = true;
+  stopRecordBtn.disabled = false;
+  pauseResumeBtn.disabled = false;
+};
+
+// Событие при окончании распознавания речи
+recognizer.onresult = (event) => {
+  let finalTranscript = "";
+
+  for (let i = event.resultIndex; i < event.results.length; i++) {
+    if (event.results[i].isFinal) {
+      let transcript = event.results[i][0].transcript;
+      finalTranscript += transcript;
+    }
+  }
+
+  if (finalTranscript !== "") {
+    outputTextarea.value += finalTranscript.trim() + "\n";
+  }
+};
+
+
+function editNote() {
+  let noteContainer = this.parentElement;
+  let contentContainer = noteContainer.querySelector(".content-container");
+  let noteTextElem = contentContainer.querySelector("p");
+  const editBtn = this;
+  let cancelBtn = noteContainer.querySelector(".cancel-btn");
+  const deleteBtn = noteContainer.querySelector(".delete-btn");
+
+  if (editBtn.getAttribute("data-edited") === "false") {
+    // Скрытие кнопки удалить
+    deleteBtn.style.display = "none";
+    // Создание кнопки отмены, если ее нет
+    if (!cancelBtn) {
+      cancelBtn = document.createElement("button");
+      cancelBtn.innerText = "Отменить";
+      cancelBtn.classList.add("cancel-btn");
+      noteContainer.insertBefore(cancelBtn, deleteBtn);
+    }
+    // Замена текста на текстовое поле
+    let inputElem = document.createElement("textarea");
+    inputElem.value = noteTextElem.innerText;
+    contentContainer.replaceChild(inputElem, noteTextElem);
+
+    // Изменение текста кнопки и атрибута
+    editBtn.innerText = "Сохранить";
+    editBtn.setAttribute("data-edited", "true");
+
+    // Обработчик событий для кнопки отменить
+    cancelBtn.addEventListener("click", function () {
+      // Замена текстового поля на текст
+      contentContainer.replaceChild(noteTextElem, contentContainer.querySelector("textarea"));
+
+      // Удаление кнопки отменить, если она существует
+      if (noteContainer.contains(cancelBtn)) {
+        noteContainer.removeChild(cancelBtn);
+      }
+
+      // Восстановление стиля кнопки удалить
+      deleteBtn.style.display = "";
+
+      // Восстановление текста кнопки редактировать и атрибута
+      editBtn.innerText = "Редактировать";
+      editBtn.setAttribute("data-edited", "false");
+    });
+  } else {
+    // Замена текстового поля на текст
+    let newTextElem = document.createElement("p");
+    newTextElem.innerText = contentContainer.querySelector("textarea").value;
+    contentContainer.replaceChild(newTextElem, contentContainer.querySelector("textarea"));
+
+    // Удаление кнопки отменить, если она существует
+    if (noteContainer.contains(cancelBtn)) {
+      noteContainer.removeChild(cancelBtn);
+    }
+
+    // Восстановление стиля кнопки удалить
+    deleteBtn.style.display = "";
+
+    // Изменение текста кнопки и атрибута
+    editBtn.innerText = "Редактировать";
+    editBtn.setAttribute("data-edited", "false");
+
+    // Сохранение изменений
+    saveNotes();
+    saveEditedNotes();
+  }
+}
+
+
+
+
+function addNote(options = {}) {
+  // Создание элементов
+  let contentContainer = document.createElement("div");
+  contentContainer.classList.add("content-container");
+  let noteContainer = document.createElement("div");
+  let noteText = document.createElement("p");
+  let deleteBtn = document.createElement("button");
+  let editBtn = document.createElement("button");
+
+  // Добавление классов и текста
+  noteContainer.classList.add("note-container");
+  deleteBtn.classList.add("delete-btn");
+  deleteBtn.innerText = "Удалить";
+  editBtn.classList.add("edit-btn");
+  editBtn.innerText = "Редактировать";
+  editBtn.setAttribute('data-edited', 'false'); // добавляем атрибут "data-edited" и присваиваем ему значение "false"
+
+  // Добавление текста и кнопки в контейнер
+  let date = new Date();
+  let dateText = document.createElement("span");
+  dateText.innerText = date.toLocaleString();
+  noteText.appendChild(dateText);
+  noteText.innerHTML += "<br><br>" + (options.noteText || outputTextarea.value);
+
+  if (options.imageData) {
+    const image = new Image();
+    image.src = options.imageData;
+    image.classList.add("note-image");
+    contentContainer.appendChild(image);
+  }
+
+  contentContainer.appendChild(noteText); // Перемещено ниже добавления изображения
+  noteContainer.appendChild(contentContainer);
+  noteContainer.appendChild(editBtn);
+  noteContainer.appendChild(deleteBtn);
+
+  // Добавление контейнера на страницу
+  notesContainer.prepend(noteContainer);
+
+  // Очистка текстового поля
+  outputTextarea.value = "";
+
+  // Добавление слушателя событий для кнопки "Редактировать"
+  editBtn.addEventListener("click", editNote);
+
+  return noteContainer;
+}
+
+recognizer.onend = () => {
+  if (recordingState === "recording") {
+    recognizer.start();
+  } else {
+    startRecordBtn.disabled = false;
+    stopRecordBtn.disabled = recordingState === "inactive";
+    pauseResumeBtn.disabled = recordingState === "inactive";
+    pauseResumeBtn.innerText = recordingState === "paused" ? "Продолжить" : "Пауза";
+  }
+};
+
+let recordingState = "inactive";
+
+startRecordBtn.addEventListener("click", () => {
+  recognizer.start();
+  recordingState = "recording";
+  startRecordBtn.disabled = true;
+  stopRecordBtn.disabled = false;
+  pauseResumeBtn.disabled = false;
+});
+
+stopRecordBtn.addEventListener("click", () => {
+  recognizer.stop();
+  recordingState = "inactive";
+  startRecordBtn.disabled = false;
+  stopRecordBtn.disabled = true;
+  pauseResumeBtn.disabled = true;
+  pauseResumeBtn.innerText = "Пауза";
+
+  addNote();
+  saveNotes();
+});
+
+pauseResumeBtn.addEventListener("click", () => {
+  if (recordingState === "recording") {
+    recognizer.stop();
+    recordingState = "paused";
+    pauseResumeBtn.innerText = "Продолжить";
+  } else if (recordingState === "paused") {
+    recognizer.start();
+    recordingState = "recording";
+    pauseResumeBtn.innerText = "Пауза";
+  }
+});
+
+
+// Событие при клике на кнопку "Удалить"
+notesContainer.addEventListener("click", function(event) {
+  if (event.target.classList.contains("delete-btn")) {
+    event.target.parentElement.remove();
+    saveNotes();
+  }
+});
+
+function addImageToNote(noteContainer, imageData) {
+  const image = new Image();
+  image.onload = () => {
+    localStorage.setItem(`image_${image.src}`, JSON.stringify({ width: image.width, height: image.height }));
+  };
+  image.src = imageData;
+  image.classList.add("note-image");
+  noteContainer.insertBefore(image, noteContainer.firstChild);
+    // Добавить ограничение максимальной ширины
+  const maxWidth = noteContainer.clientWidth;
+  image.style.maxWidth = `${maxWidth}px`;
+  saveNotes();
+}
+const imageInput = document.getElementById("imageInput");
+
+imageInput.addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+reader.onload = () => {
+  const noteContainer = addNote(); // Создаем заметку перед добавлением изображения
+  addImageToNote(noteContainer, reader.result);
+  saveNotes(); // Сохраняем заметку с изображением
+};
+  reader.readAsDataURL(file);
+});
+
+const captureBtn = document.getElementById("captureBtn");
+
+captureBtn.addEventListener("click", () => {
+  const video = document.createElement("video");
+  const videoWrapper = document.createElement("div");
+  videoWrapper.style.position = "fixed";
+  videoWrapper.style.top = "0";
+  videoWrapper.style.left = "0";
+  videoWrapper.style.width = "100%";
+  videoWrapper.style.height = "100%";
+  videoWrapper.style.zIndex = "1000";
+  videoWrapper.style.display = "flex";
+  videoWrapper.style.alignItems = "center";
+  videoWrapper.style.justifyContent = "center";
+  videoWrapper.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+  videoWrapper.appendChild(video);
+
+  const capture = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(video, 0, 0);
+    addNote(); // Создаем заметку перед добавлением изображения
+    const noteContainer = document.querySelector(".note-container");
+    addImageToNote(noteContainer, canvas.toDataURL("image/jpeg"));
+    video.srcObject.getTracks().forEach((track) => track.stop());
+    document.body.removeChild(videoWrapper);
+  };
+  navigator.mediaDevices
+    .getUserMedia({ video: { facingMode: { exact: "environment" } } })
+    .then((stream) => {
+      video.srcObject = stream;
+      video.play();
+      video.addEventListener("click", capture);
+      document.body.prepend(videoWrapper);
+    })
+    .catch((error) => {
+      console.error("Error accessing camera: ", error);
+    });
+});
+
+
+
+// Функция для получения сохраненных заметок из localStorage
+function getSavedNotes() {
+  let savedNotes = localStorage.getItem("notes");
+  if (savedNotes) {
+    return JSON.parse(savedNotes);
+  }
+  return { notes: [], images: [] };
+}
+
+// Функция для сохранения заметок в localStorage
+function saveNotes() {
+  let noteContainers = document.querySelectorAll(".note-container");
+  let notes = [];
+  let images = [];
+
+  for (let noteContainer of noteContainers) {
+    let noteText = noteContainer.querySelector("p").innerText;
+    let image = noteContainer.querySelector(".note-image");
+    let imageData = image ? image.src : null;
+
+    notes.push(noteText);
+    images.push(imageData);
+  }
+
+  localStorage.setItem("notes", JSON.stringify({ notes, images }));
+}
+
+// Сохранение состояния кнопки редактирования
+function saveEditedNotes() {
+  const editedNotes = Array.from(document.querySelectorAll('.edit-btn[data-edited="true"]')).map((btn) => btn.parentElement.querySelector('p').innerText);
+  localStorage.setItem("editedNotes", JSON.stringify(editedNotes));
+}
+
+
+// Событие при загрузке страницы
+window.addEventListener("load", function() {
+  // Добавление ранее сохраненных заметок на страницу
+  let savedNotes = getSavedNotes();
+  for (let [index, noteText] of savedNotes.notes.entries()) {
+    let noteContainer = document.createElement("div");
+    let contentContainer = document.createElement("div");
+    let noteTextElem = document.createElement("p");
+    let deleteBtn = document.createElement("button");
+    let editBtn = document.createElement("button");
+
+    noteContainer.classList.add("note-container");
+    contentContainer.classList.add("content-container");
+    deleteBtn.classList.add("delete-btn");
+    deleteBtn.innerText = "Удалить";
+    editBtn.classList.add("edit-btn");
+    editBtn.innerText = "Редактировать";
+    editBtn.setAttribute('data-edited', 'false');
+
+    const noteImageSrc = savedNotes.images[index];
+    noteTextElem.innerText = noteText;
+
+    if (noteImageSrc) {
+      const image = new Image();
+      image.onload = () => {
+        const imageSize = JSON.parse(localStorage.getItem(`image_${image.src}`));
+        if (imageSize) {
+          image.width = imageSize.width;
+          image.height = imageSize.height;
+        }
+      };
+      image.src = noteImageSrc;
+      image.classList.add("note-image");
+      contentContainer.appendChild(image);
+    }
+
+    contentContainer.appendChild(noteTextElem);
+    noteContainer.appendChild(contentContainer);
+    noteContainer.appendChild(editBtn);
+    noteContainer.appendChild(deleteBtn);
+    notesContainer.appendChild(noteContainer);
+
+    editBtn.addEventListener("click", editNote);
+  }
+
+  // Восстановление состояния кнопки редактирования
+  const editedNotes = JSON.parse(localStorage.getItem("editedNotes")) || [];
+  for (let noteText of editedNotes) {
+    const noteContainers = Array.from(document.querySelectorAll(".note-container"));
+    const noteContainer = noteContainers.find(container => container.querySelector("p").innerText === noteText);
+    if (noteContainer) {
+      const editBtn = noteContainer.querySelector(".edit-btn");
+      editBtn.setAttribute('data-edited', 'true');
+      editBtn.click();
+    }
+  }
+});
+
+
+
+
+
+const searchInput = document.getElementById("search-input");
+const searchBtn = document.getElementById("search-btn");
+
+searchBtn.addEventListener("click", () => {
+  const searchValue = searchInput.value.toLowerCase();
+  const noteContainers = document.querySelectorAll(".note-container");
+
+  // Сброс выделения и прокрутки при новом поиске
+  noteContainers.forEach(container => {
+    container.classList.remove("highlight");
+    container.classList.remove("scroll-to");
+  });
+
+  const foundContainers = Array.from(noteContainers).filter(container => {
+    const noteText = container.querySelector("p").innerText.toLowerCase();
+    return noteText.includes(searchValue);
+  });
+
+  if (foundContainers.length > 0) {
+    // Выделение найденных заметок и прокрутка к первому результату
+    foundContainers[0].classList.add("highlight", "scroll-to");
+    foundContainers.slice(1).forEach(container => {
+      container.classList.add("highlight");
+    });
+    foundContainers[0].scrollIntoView({behavior: "smooth", block: "center"});
+  }
+
+
+});
+
+// Обработчик события нажатия на кнопку "Сбросить поиск"
+const resetBtn = document.getElementById("reset-btn");
+resetBtn.addEventListener("click", () => {
+    // Сброс поля ввода
+  searchInput.value = "";
+  const noteContainers = document.querySelectorAll(".note-container");
+  noteContainers.forEach(container => {
+    container.classList.remove("highlight");
+    container.classList.remove("scroll-to");
+  });
+});
+
+
+
+</script>
+</body>
+</html>
